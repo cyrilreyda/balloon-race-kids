@@ -319,7 +319,10 @@
   .pb-bal{display:inline-block; width:17px; flex-shrink:0;}
   .pb-bal svg{display:block; width:100%; height:auto; overflow:visible;}
   .win.prof{position:relative; text-align:left; max-width:480px;}
-  .win.prof > #profShare .share-ico{top:16px; right:16px;}
+  /* Хрестик угорі праворуч закриває вікно */
+  .prof-close{position:absolute; top:14px; right:14px; z-index:1; width:34px; height:34px; border-radius:50%; border:1.5px solid var(--line); background:var(--surface); color:var(--ink-soft); font-size:16px; font-weight:700; line-height:1; cursor:pointer;}
+  .prof-close:hover{border-color:var(--coral); color:var(--coral);}
+  .prof-foot .share-ico{position:static;}   /* «поділитися» — унизу праворуч, поруч із «скинути мій прогрес» */
   .win.prof h2{text-align:center; font-size:24px;}
   .prof-avatar{position:relative; width:150px; margin:0 auto 6px; padding:16px 34px 8px; border-radius:var(--radius-l); background:linear-gradient(180deg, #E3F7F6, #F6F5FB);}
   .prof-avatar svg{display:block; width:100%; height:auto; overflow:visible;}
@@ -665,7 +668,7 @@
 <!-- Профіль гравця -->
 <div class="overlay" id="profileOverlay">
   <div class="win prof" role="dialog" aria-labelledby="profTitle">
-    <div id="profShare"></div>
+    <button class="prof-close" id="profClose" type="button" title="Закрити вікно" aria-label="Закрити вікно">✕</button>
     <div class="prof-avatar" id="profAvatar"></div>
     <h2 id="profTitle"></h2>
     <div class="prof-stats" id="profStats"></div>
@@ -680,7 +683,7 @@
     <p class="note-small" id="addErr"></p>
     <div class="prof-foot">
       <button class="link-btn danger" id="resetBtn" type="button">скинути мій прогрес</button>
-      <button class="btn btn-ghost btn-small" id="profClose" type="button">Закрити</button>
+      <div id="profShare"></div>
     </div>
   </div>
 </div>
@@ -1942,7 +1945,7 @@ function startRace(opts){
     text: opts.text || makeText(opts.lang, level, pace, opts.cpm), more: opts.more || (()=>makeText(opts.lang, level, pace, opts.cpm)),
     pace, weak:{}, drill:opts.drill || null, track:opts.track, lang:opts.lang, level, model:opts.model, comp:opts.comp || null,
     pos:0, errors:0, missed:false, streak:0, topStreak:0, phase:'countdown', startT:0, lastKeyT:0, noBot:!!opts.noBot,
-    botCpm:opts.cpm, botChars:0, seed:Math.random()*10, lastFrame:0,
+    botCpm:opts.cpm, botChars:0, botFair:0, rate:0, seed:Math.random()*10, lastFrame:0,
     assist:!opts.day && (opts.paced || !BOOST && !opts.comp?.pro), assistK:1, botDelay:BOOST || opts.comp?.pro ? 0 : ASSIST.delay,
     // висота кулі: поріг темпу lift, «тепло» пальника heat (зн/хв), найвища висота за політ, приземлення
     lift: Math.max(LIFT.minCpm, pace * LIFT.ratio), h:LIFT.start, maxH:LIFT.start, landed:false, lowTip:false, view:0, wind:0,
@@ -2049,6 +2052,15 @@ function go(){
 const RACE_SEC = 60;
 const LIFT = { start:.42, top:.9, rise:.12, fall:.11, tau:3, ratio:.5, minCpm:8, cap:2, grace:3, low:.25 };
 const BOT_H = .86;   // робот летить рівно на цій висоті, лише трохи погойдується
+// Робот поруч: botFair — «чесна» дистанція робота, як у «Клавіатурних перегонах» (швидкість під учня, пригальмовування),
+// botChars — де робот на екрані. Посеред польоту робот тримається біля кулі учня (або біля botFair, якщо учень
+// зупинився) і то відстає, то обганяє: хвиля з амплітудою amp секунд друку учня (від ampMin до ampMax метрів)
+// і періодом period секунд, що з'являється за ramp секунд після старту. За settle[0]–settle[1] секунд до фінішу
+// робот повертається до botFair, тож переможця, як і раніше, вирішує звична швидкість учня. Швидкість робота —
+// від min до max темпу учня (rate — темп за останні tau секунд, але не менше половини швидкості робота), gain — як
+// швидко він доганяє свою ціль
+const CHASE = { tau:5, amp:8, ampMin:3, ampMax:9, period:30, ramp:[3, 10], settle:[20, 5], gain:.8, min:.35, max:2.2 };
+const clamp01 = x => Math.min(1, Math.max(0, x));
 
 function loop(now){
   if(!race || race.phase !== 'race') return;
@@ -2066,15 +2078,25 @@ function loop(now){
     const k = 1 + 0.14*Math.sin(t*0.9 + race.seed) + 0.06*Math.sin(t*2.7 + race.seed*2);   // робот то пришвидшується, то гальмує
     if(race.assist){
       // Непомітна підтримка: поки дитина друкує, робот, що відірвався, плавно пригальмовує
-      const lead = race.botChars - race.pos;
+      const lead = race.botFair - race.pos;
       const kidCpm = race.pos / Math.max(1, t) * 60;
       const typing = now - Math.max(race.lastKeyT, race.startT) < Math.max(ASSIST.idleMs, ASSIST.idle * 60000 / Math.max(kidCpm, 1));
       const target = typing && lead > ASSIST.lead ? Math.min(1, Math.max(ASSIST.min, kidCpm * ASSIST.ratio / race.botCpm)) : 1;
       race.assistK += (target - race.assistK) * Math.min(1, dt * ASSIST.ease);
     }
+    race.rate *= Math.exp(-dt / CHASE.tau);
     if(t >= race.botDelay){
+      race.botFair += race.botCpm / 60 * dt * k * race.assistK;
+      // Робот на екрані: біля кулі учня з хвилею, наприкінці — на чесній дистанції
+      const v = Math.max(race.rate, race.botCpm * .5) / 60;   // темп учня, метрів за секунду
+      const amp = Math.min(CHASE.ampMax, Math.max(CHASE.ampMin, v * CHASE.amp));
+      const wave = amp * Math.sin(2 * Math.PI * t / CHASE.period + race.seed) * clamp01((t - CHASE.ramp[0]) / (CHASE.ramp[1] - CHASE.ramp[0]));
+      const mid = Math.max(race.pos, race.botFair) + wave;
+      const end = clamp01((t - RACE_SEC + CHASE.settle[0]) / (CHASE.settle[0] - CHASE.settle[1]));
+      const target = mid + (race.botFair - mid) * end;
+      const speed = Math.min(v * CHASE.max, Math.max(v * CHASE.min, v + (target - race.botChars) * CHASE.gain));
       const before = race.botChars;
-      race.botChars += race.botCpm / 60 * dt * k * race.assistK;
+      race.botChars += speed * dt;
       if(Math.floor(race.botChars) > Math.floor(before)) burn(balBot);
     }
   }
@@ -2189,6 +2211,7 @@ function handleChar(ch){
     race.pos++;
     race.lastKeyT = performance.now();
     race.heat = Math.min(race.lift * LIFT.cap, race.heat + 60 / LIFT.tau);   // пальник підігріває кулю
+    race.rate += 60 / CHASE.tau;
     burn(balMe);
     if(race.text.length - race.pos < TEXT_MORE) extendText();
     if(++race.streak % STREAK_STEP === 0) praise(race.streak);

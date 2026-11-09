@@ -150,10 +150,10 @@
   .stat b{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:17px; color:var(--ink); margin-right:3px;}
   .text-box{position:relative;
     font-size:27px; font-weight:600; line-height:1.55; padding:12px 14px; border-radius:var(--radius-m); background:#FBFAFE; border:1.5px solid var(--line); min-height:70px;}
-  /* Видно два рядки тексту: довгий текст швидкого учня прокручується, щоб клавіатура лишалась на екрані.
-     Відступ 3px — щоб не обрізалась підсвітка поточної літери */
+  /* Видно один рядок тексту — той, що зараз друкується: клавіатуру краще видно, а учень зосереджений на поточних літерах.
+     Наступний рядок з'являється, коли до нього доходить черга. Відступ 3px — щоб не обрізалась підсвітка поточної літери */
   .text-lines{position:relative; display:flex; flex-wrap:wrap; align-items:baseline; row-gap:4px;
-    max-height:calc(2 * 1.55em + 4px + 6px); overflow:hidden; padding:3px 2px; margin:-3px -2px;}
+    max-height:calc(1.55em + 6px); overflow:hidden; padding:3px 2px; margin:-3px -2px;}
   .emo{display:inline-block; width:1.15em; height:1.15em; vertical-align:-.2em;}   /* картинка замість емодзі (листок каштана) */
   .word{white-space:nowrap;}
   .ch{border-radius:5px; padding:0 1px; transition:background .1s ease;}
@@ -875,7 +875,7 @@ const house = ([x, w, h, c], roof) => { const y = 64 - h;
   for(let wy = y+5; wy < 58; wy += 9) for(let wx = x+3; wx < x+w-4; wx += 6.5) b += `<rect x="${wx}" y="${wy}" width="3" height="4.5" fill="#FFF6C7"/>`;
   return b; };
 
-// Київщина: Лаврська дзвіниця, Михайлівський собор, Батьківщина-Мати, телевежа, Арка Свободи, каштани
+// Київщина: Лаврська дзвіниця, Михайлівський собор, Батьківщина-Мати, синьо-жовтий прапор, Арка Свободи, каштани
 function kyivGround(){
   const B = [[118,22,30,'#F2A97E'],[142,18,40,'#8E9AC8'],[222,24,34,'#7FC8C0'],[248,20,26,'#F5C76B'],[270,26,42,'#B79CE0'],[438,24,30,'#F2A97E']];
   let s = '<path d="M0 52 Q60 38 130 48 T260 46 T400 44 T480 52 V64 H0 Z" fill="#A9D9A2"/>';   // київські пагорби
@@ -895,15 +895,14 @@ function kyivGround(){
     <path d="M192 42 L194.5 22 Q196 19 197.5 22 L200 42 Z" fill="#C9CFDA"/><circle cx="196" cy="18" r="2.4" fill="#C9CFDA"/>
     <path d="M197.5 23 L203 9" stroke="#C9CFDA" stroke-width="2.2" stroke-linecap="round"/><path d="M202.5 10 L206 1" stroke="#EEF1F5" stroke-width="1.6" stroke-linecap="round"/>
     <ellipse cx="190.5" cy="28" rx="3.6" ry="4.4" fill="#AEB6C4"/>`;
-  // Київська телевежа
-  s += `<path d="M316 64 L322.5 26 H325.5 L332 64 Z" fill="none" stroke="#8A93A6" stroke-width="1.6"/>
-    <path d="M318 56 L330 46 M330 56 L318 46 M320 44 L328 34 M328 44 L320 34" stroke="#8A93A6" stroke-width=".9"/>
-    <rect x="320" y="24" width="8" height="3" fill="#8A93A6"/><rect x="323" y="6" width="2" height="18" fill="#8A93A6"/>
-    <rect x="323.2" y="1" width="1.6" height="5" fill="#E8453C"/><rect x="323.2" y="3" width="1.6" height="1.2" fill="#fff"/>`;
+  // Великий синьо-жовтий прапор на щоглі
+  s += `<rect x="321.8" y="5" width="2.4" height="59" fill="#6E6C8A"/><circle cx="323" cy="4" r="2" fill="#F2C230"/>
+    <path d="M324 6 Q331 3 338 6 T352 6 V16 Q345 13 338 16 T324 16 Z" fill="#2F6FD1"/>
+    <path d="M324 16 Q331 13 338 16 T352 16 V26 Q345 23 338 26 T324 26 Z" fill="#FFD23F"/>`;
   // Арка Свободи
   s += `<path d="M362 64 A24 24 0 0 1 410 64" fill="none" stroke="#9AA3B5" stroke-width="4"/>
     <path d="M378 64 V54 H386 V64 M381 54 V50 H383 V54" fill="#B8BFCC"/>`;
-  s += chestnutTree(16, 50, 9) + chestnutTree(214, 52, 7) + chestnutTree(300, 50, 9) + chestnutTree(424, 52, 7) + flag(466, 30);
+  s += chestnutTree(16, 50, 9) + chestnutTree(214, 52, 7) + chestnutTree(300, 50, 9) + chestnutTree(424, 52, 7) + chestnutTree(464, 50, 8);
   return groundTile(480, s, '#7CC47F');
 }
 // Полтавщина: Біла альтанка, хати під стріхою, вітряк, соняшники, тополі
@@ -1926,7 +1925,7 @@ function extendText(){
   race.text += more;
   addSpans(more);
 }
-// Рядок із поточною літерою — першим у віконці (останній рядок тексту показуємо разом із попереднім)
+// У віконці — лише рядок із поточною літерою: на новий рядок прокручуємо, коли до нього доходить черга
 function scrollLines(){
   const top = spans[race.pos].offsetTop - spans[0].offsetTop;
   if(top !== textLines.scrollTop) textLines.scrollTo({ top, behavior:'smooth' });

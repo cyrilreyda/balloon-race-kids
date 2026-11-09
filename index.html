@@ -285,7 +285,10 @@
   .unlock .track-prev{border-radius:var(--radius-s); margin-top:8px;}
   .win-actions{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:6px;}
   /* Кнопки вікна результату стоять одразу під зірками, над показниками, тож їх видно без прокрутки */
-  #overlay .win{max-height:calc(100vh - 32px);}
+  #overlay .win{position:relative; max-height:calc(100vh - 32px);}
+  /* Хрестик закриває вікно результату — те саме, що друга кнопка («До перегонів» чи «До результатів») */
+  .win-close{position:absolute; top:12px; right:12px; width:34px; height:34px; border-radius:50%; border:1.5px solid var(--line); background:var(--surface); color:var(--ink-soft); font-size:16px; font-weight:700; line-height:1; cursor:pointer;}
+  .win-close:hover{border-color:var(--coral); color:var(--coral);}
   #overlay .win-actions{margin:0 0 14px;}
   /* Невисокий екран: усе компактніше, нові кулі й регіони — в один ряд */
   @media (max-height:780px){
@@ -299,6 +302,8 @@
     #overlay .unlock-list{grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));}
     #overlay .unlock-item{flex-direction:column; gap:4px; text-align:center; font-size:13px;}
     #overlay .unlock-item .thumb{width:84px;}
+    #overlay .unlock-item .thumb.badge{width:44px;}
+    #overlay .unlock-item b{display:block; line-height:1.2;}   /* «Змагання» чи «Куля» — підписом, назва — окремим рядком */
     #overlay .unlock-item .track-prev{height:36px;}
   }
 
@@ -378,7 +383,11 @@
   .unlock-list{display:grid; gap:8px; margin-top:8px;}
   .unlock-item{display:flex; align-items:center; gap:12px; text-align:left; font-size:14px;}
   .unlock-item .thumb{width:92px; flex-shrink:0;}
-  .unlock-item .thumb svg{height:64px; width:auto; margin:0 auto; display:block; overflow:visible;}
+  .unlock-item .thumb svg{width:100%; display:block; overflow:visible;}
+  .unlock-item .thumb.bal svg{height:64px; width:auto; margin:0 auto;}
+  /* бейджик змагання — невеликий значок, а не на всю ширину мініатюри */
+  .unlock-item .thumb.badge{width:44px;}
+  .unlock-item .thumb .badge-ico{display:block; width:44px; height:44px;}
   .unlock-item .track-prev{margin:0; height:44px;}
   .unlock-item small{color:var(--ink-soft);}
 
@@ -615,6 +624,7 @@
 <!-- Результат польоту -->
 <div class="overlay" id="overlay">
   <div class="win" role="dialog" aria-labelledby="winTitle">
+    <button class="win-close" id="winClose" type="button" title="Закрити (Esc)" aria-label="Закрити">✕</button>
     <div class="big" id="wBig">🏆</div>
     <h2 id="winTitle">Перемога!</h2>
     <p class="sub" id="wSub"></p>
@@ -2352,10 +2362,10 @@ function finish(){
   if(weak.length){ const lang = race.lang, keys = weak.map(([k])=>k); document.getElementById('drillBtn').addEventListener('click', ()=>startDrill(lang, keys)); }
   document.getElementById('wUnlock').innerHTML =
     (opened.length ? `<div class="unlock"><b>🔓 Відкрито за нейрончики!</b><div class="unlock-list">${opened.map(u=>u.kind==='balloon'
-        ? `<div class="unlock-item"><div class="thumb">${balloonSVG(u.id, balloonColor(u.id), 'me')}</div><span>Куля <b>${BALLOONS[u.id].name}</b></span></div>`
+        ? `<div class="unlock-item"><div class="thumb bal">${balloonSVG(u.id, balloonColor(u.id), 'me')}</div><span>Куля <b>${BALLOONS[u.id].name}</b></span></div>`
         : `<div class="unlock-item"><div class="thumb">${trackPreview(TRACKS[trackIdx(u.id)])}</div><span>Регіон <b>${TRACKS[trackIdx(u.id)].emoji} ${TRACKS[trackIdx(u.id)].name}</b></span></div>`).join('')}</div></div>` : '') +
     (proNow ? `<div class="unlock"><b>⚡ Ти друкуєш дуже швидко! Відкрито нові змагання</b><div class="unlock-list">${COMPS.filter(c=>c.pro).map(c=>
-        `<div class="unlock-item"><div class="thumb">${badgeHTML(c.badge)}</div><span>Змагання <b>${c.name}</b></span></div>`).join('')}</div></div>` : '') +
+        `<div class="unlock-item"><div class="thumb badge">${badgeHTML(c.badge)}</div><span>Змагання <b>${c.name}</b></span></div>`).join('')}</div></div>` : '') +
     (earned.length ? `<div class="unlock"><b>🎉 ${earned.length > 1 ? 'Нові наліпки' : 'Нова наліпка'}!</b><div class="stickers">${earned.map(stickerHTML).join('')}</div></div>` : '');
   document.getElementById('wUnlock').querySelectorAll('.sticker').forEach(s=>s.classList.add('new'));
 
@@ -2422,6 +2432,9 @@ document.getElementById('toSetupBtn').addEventListener('click', ()=>exitAction()
 document.getElementById('exitBtn').addEventListener('click', toSetup);
 // Esc під час польоту — повернутися в гараж
 document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && race && !overlay.classList.contains('show')) toSetup(); });
+// Хрестик або Esc у вікні результату — як друга кнопка вікна
+document.getElementById('winClose').addEventListener('click', ()=>exitAction());
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && overlay.classList.contains('show')) exitAction(); });
 
 /* ================= Вибір гравця ================= */
 const nameOverlay = document.getElementById('nameOverlay');

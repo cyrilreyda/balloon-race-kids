@@ -80,4 +80,4 @@ python -m http.server 8767
 
 ## Автори
 
-Механіка, профіль і змагання — з [«Клавіатурних перегонів»](https://github.com/cyrilreyda/typing-race-kids), які є спрощеною версією [«Клавіатурних перегонів»](https://cikavo.me/labs/typing-race/) з [Лабораторії](https://cikavo.me/labs/) автора [tkc-teacher](https://github.com/tkc-teacher/cikavo). «Повітряні перегони» — cyrilreyda.
+Механіка, профіль і змагання — з [«Клавіатурних перегонів»](https://github.com/cyrilreyda/typing-race-kids), які є спрощеною версією [«Клавіатурних перегонів»](https://cikavo.me/labs/typing-race/). Джерело: Ткачук І. А. Інтерактивні уроки інформатики. — https://cikavo.me. — Ліцензія [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.uk). «Повітряні перегони» — cyrilreyda.

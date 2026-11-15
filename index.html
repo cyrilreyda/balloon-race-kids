@@ -11,6 +11,7 @@
 <meta name="theme-color" content="#16A3A0">
 <script src="/lock.js"></script>   <!-- замок «лише на уроці» з каталогу; у грі з архіву його немає, і вона відкривається як завжди -->
 <script src="/account.js"></script>   <!-- спільний акаунт учня з каталогу; без нього гра питає ім'я, як раніше -->
+<script src="/duel.js"></script>   <!-- «Разом»: політ з однокласником; без акаунта його немає -->
 <style>
   :root{
     --bg:#F6F5FB; --ink:#1B1B3A; --ink-soft:#514F72; --surface:#FFFFFF; --line:#E4E1F5;
@@ -436,7 +437,7 @@
   .pilot-pick svg{display:block; width:100%; height:100%;}
   .pilot-pick:hover{border-color:var(--teal);}
   .pilot-pick.on{border-color:var(--ink); box-shadow:0 0 0 2px var(--ink);}
-  .start-over{position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; pointer-events:none;}
+  .start-over{position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:14px; pointer-events:none;}
   .start-over .btn{pointer-events:auto; box-shadow:0 4px 0 var(--teal-dark), 0 10px 24px rgba(27,27,58,.3);}
   .race-info{font-family:'Baloo 2',sans-serif; font-weight:600; font-size:14px; color:var(--ink-soft); margin:-4px 0 10px;}
   .race-info:empty{display:none;}
@@ -573,7 +574,7 @@
 
 <main class="container">
   <section class="track" id="track" aria-label="Небо регіону">
-    <div class="start-over" id="startBar"><button class="btn btn-primary btn-big" id="startBtn">🎈 На старт!</button></div>
+    <div class="start-over" id="startBar"><button class="btn btn-primary btn-big" id="startBtn">🎈 На старт!</button><button class="btn btn-ghost btn-big" id="duelBtn" hidden>🧑‍🤝‍🧑 Разом</button></div>
     <span class="track-name" id="trackName"></span>
     <div class="timer" id="timer" hidden><span id="timerNum">1:00</span><span class="tbar"><i></i></span>🏁</div>
     <div class="clouds" id="clouds"></div>
@@ -1671,6 +1672,7 @@ function renderSetup(){
 /* ================= Вкладки й змагання ================= */
 const startBar = document.getElementById('startBar');
 const startBtn = document.getElementById('startBtn');
+const duelBtn = document.getElementById('duelBtn');
 const activeTab = () => document.querySelector('.tab.on')?.dataset.tab || 'paneFree';
 function showTab(id){
   if(id === 'paneComp' && !compById(selComp)) id = 'paneComps';
@@ -1681,6 +1683,7 @@ function showTab(id){
   if(id === 'paneComp'){ renderCompPane(); previewComp(); startBar.hidden = false; }
   else if(id === 'paneComps'){ renderComps(); startBar.hidden = true; }
   else { applyTrack(settings.track); drawBalloons(); parkBalloons(); startBar.hidden = false; }
+  duelBtn.hidden = !(id === 'paneFree' && window.Duel?.available());   // «Разом» — лише у вільному польоті
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>{ if(!t.classList.contains('on')) showTab(t.dataset.tab); }));
 
@@ -2025,7 +2028,7 @@ function startRace(opts){
   race = {
     text: opts.text || makeText(opts.lang, level, pace, opts.cpm), more: opts.more || (()=>makeText(opts.lang, level, pace, opts.cpm)),
     pace, weak:{}, drill:opts.drill || null, track:opts.track, lang:opts.lang, level, model:opts.model, comp:opts.comp || null,
-    pos:0, errors:0, missed:false, streak:0, topStreak:0, phase:'countdown', startT:0, lastKeyT:0, noBot:!!opts.noBot,
+    pos:0, errors:0, missed:false, streak:0, topStreak:0, phase:'countdown', startT:0, lastKeyT:0, noBot:!!opts.noBot, duel:opts.duel || null,
     botCpm:opts.cpm, botChars:0, botFair:0, rate:0, seed:Math.random()*10, lastFrame:0,
     assist:!opts.day && (opts.paced || !BOOST && !opts.comp?.pro), assistK:1, botDelay:BOOST || opts.comp?.pro ? 0 : ASSIST.delay,
     // висота кулі: поріг темпу lift, «тепло» пальника heat (зн/хв), найвища висота за політ, приземлення
@@ -2041,6 +2044,7 @@ function startRace(opts){
   applyTrack(opts.track);
   buildKeyboard();
   drawBalloons(opts.model);
+  if(race.duel) drawOpp(race.duel.opp, opts.model);
   balMe.classList.remove('low', 'burn', 'bump');
   balBot.hidden = race.noBot;
   parkBalloons();
@@ -2051,7 +2055,7 @@ function startRace(opts){
     ? `🏆 ${c.name} · етап ${profile.runs[c.id].stage + 1}/${c.stages.length} · 🎯 від ${c.minAcc}%`
     : race.drill ? `🎯 Тренування клавіш: ${race.drill.map(keyName).join(', ')}` : '';
   const notes = [BOOST && 'нормативи 5–7 класів'];
-  if(!c && !race.drill) notes.push(TEACHER.noBot ? 'політ без робота' : TEACHER.cpm && `робот ${TEACHER.cpm} зн/хв`);
+  if(!c && !race.drill && !race.duel) notes.push(TEACHER.noBot ? 'політ без робота' : TEACHER.cpm && `робот ${TEACHER.cpm} зн/хв`);
   document.getElementById('teacherNote').textContent = notes.some(Boolean) ? 'Налаштування вчителя: ' + notes.filter(Boolean).join(' · ') : '';
   renderText();
   spans[0].classList.add('cur');
@@ -2145,18 +2149,18 @@ const CHASE = { tau:5, amp:8, ampMin:3, ampMax:9, period:30, ramp:[3, 10], settl
 const clamp01 = x => Math.min(1, Math.max(0, x));
 
 function loop(now){
-  if(!race || race.phase !== 'race') return;
+  if(!race || race.phase !== 'race' && race.phase !== 'wait') return;   // wait — «Разом»: свій політ скінчився, суперник ще летить
   const raw = now - race.lastFrame;
   const dt = Math.min(0.25, raw / 1000);
   race.lastFrame = now;
-  if(race.hold.focus || race.hold.alert || race.hold.pause){   // пауза: годинник, робот і куля стоять
+  if(!race.duel && (race.hold.focus || race.hold.alert || race.hold.pause)){   // пауза: годинник, робот і куля стоять (у «Разом» суперник не чекає)
     race.startT += raw;
     if(race.lastKeyT) race.lastKeyT += raw;
     rafId = requestAnimationFrame(loop);
     return;
   }
   const t = Math.min(RACE_SEC, (now - race.startT) / 1000);
-  if(!race.noBot){
+  if(!race.noBot && !race.duel){   // у «Разом» кулю суперника рухає його відстань (onOpp)
     const k = 1 + 0.14*Math.sin(t*0.9 + race.seed) + 0.06*Math.sin(t*2.7 + race.seed*2);   // робот то пришвидшується, то гальмує
     if(race.assist){
       // Непомітна підтримка: поки дитина друкує, робот, що відірвався, плавно пригальмовує
@@ -2182,6 +2186,21 @@ function loop(now){
       if(Math.floor(race.botChars) > Math.floor(before)) burn(balBot);
     }
   }
+  if(race.duel && race.oppAt){   // «Разом»: між оновленнями летимо зі швидкістю суперника, але не далі ніж на 0,8 знака від його відстані
+    const ahead = race.oppFin || race.oppLeft ? race.oppPos : Math.min(race.oppPos + 0.8, race.oppPos + (race.oppRate || 0) * (now - race.oppAt) / 1000);
+    const before = race.botChars;
+    race.botChars = Math.max(race.botChars, race.botChars + (ahead - race.botChars) * Math.min(1, dt * 8));
+    if(Math.floor(race.botChars) > Math.floor(before)) burn(balBot);
+    if(race.oppDown) race.oppH = Math.max(0, race.oppH - dt * .2);   // суперник приземлився раніше — його куля сідає
+  }
+  const oppH = race.duel ? race.oppH : BOT_H;
+  const botH = oppH + (oppH > .05 ? .025 * Math.sin(t * 1.1 + race.seed) : 0);
+  if(race.phase === 'wait'){   // «Разом»: учень уже не летить, рухається лише куля суперника
+    drawFlight(race.view, race.h, race.botChars, botH, race.wind);
+    updateTimer(t);
+    rafId = requestAnimationFrame(loop);
+    return;
+  }
   // Висота кулі учня
   race.heat *= Math.exp(-dt / LIFT.tau);
   const d = (race.heat - race.lift) / race.lift;
@@ -2196,7 +2215,7 @@ function loop(now){
   race.view += (race.pos - race.view) * Math.min(1, dt * 4);   // камера м'яко доганяє кулю після кожної літери
   race.wind += dt * 8;                                          // хмари пливуть за вітром, пікселів за секунду
   const bob = race.h > .05 ? .012 * Math.sin(t * 1.4) : 0;
-  drawFlight(race.view, race.h + bob, race.botChars, BOT_H + .025 * Math.sin(t * 1.1 + race.seed), race.wind);
+  drawFlight(race.view, race.h + bob, race.botChars, botH, race.wind);
   updateTimer(t);
   if(race.h <= 0){ race.landed = true; return finish(); }
   if(t >= RACE_SEC) return finish();
@@ -2292,6 +2311,7 @@ function handleChar(ch){
     race.missed = false;
     race.pos++;
     race.lastKeyT = performance.now();
+    if(race.duel) window.Duel.pos(race.pos);
     race.heat = Math.min(race.lift * LIFT.cap, race.heat + 60 / LIFT.tau);   // пальник підігріває кулю
     race.rate += 60 / CHASE.tau;
     burn(balMe);
@@ -2363,7 +2383,8 @@ document.addEventListener('keydown', e=>{
 
 let againAction = startFree, exitAction = toSetup;
 function finish(){
-  const now = performance.now();
+  const now = race.endT || performance.now();
+  if(race.duel && duelWait(now)) return;   // «Разом»: результат — коли долетить і суперник
   race.phase = 'done';
   cancelAnimationFrame(rafId);
   balMe.classList.remove('low', 'burn');
@@ -2371,15 +2392,16 @@ function finish(){
   showNextKey(undefined);
   const solo = race.noBot;                // політ без робота: просто фініш
   const landed = race.landed;             // куля сіла на землю до фінішу
-  const typed = race.pos, botDist = Math.floor(race.botChars);
-  const won = !solo && !landed && typed > botDist;   // долетів і пролетів далі за робота
+  const duel = race.duel;                 // «Разом»: суперник — однокласник
+  const typed = race.pos, botDist = duel ? race.oppPos || 0 : Math.floor(race.botChars);
+  const won = duel ? typed > botDist : !solo && !landed && typed > botDist;   // долетів і пролетів далі за робота; у «Разом» — більше за суперника
   const sec = Math.min(RACE_SEC, (now - race.startT) / 1000);
   const speed = Math.round(typed / Math.max(1, sec) * 60);
   const acc = typed ? Math.round(typed / (typed + race.errors) * 100) : 0;
   const stars = landed ? 1 : won || solo ? 2 + (acc >= (BOOST ? 95 : 90) ? 1 : 0) : 1;
   const key = bestKey(race.lang, race.track);
   const prevBest = profile.bests[key] || 0;
-  const record = (won || solo) && speed > prevBest;  // рекорд — лише за долетілий до фінішу політ
+  const record = (won || solo) && !(duel && landed) && speed > prevBest;  // рекорд — лише за долетілий до фінішу політ
   if(record) profile.bests[key] = speed;
   profile.races++;
   if(!race.drill){   // швидкість по днях — для графіка в профілі: [сума швидкостей, польотів, найкраща]
@@ -2447,7 +2469,7 @@ function finish(){
   profile.neurons += gain;
   const opened = UNLOCKS.filter(u=>u.at > before && u.at <= profile.neurons);
   // Наліпки
-  const run = { won, landed, typed, errors:race.errors, topStreak:race.topStreak, top:race.maxH >= LIFT.top - .01, newRecord:record && prevBest > 0, drill:!!race.drill };
+  const run = { won:won && !duel, landed, typed, errors:race.errors, topStreak:race.topStreak, top:race.maxH >= LIFT.top - .01, newRecord:record && prevBest > 0, drill:!!race.drill };
   const earned = STICKERS.filter(st=>!profile.stickers[st.id] && (st.test ? st.test(run) : st.count(profile) >= st.need));
   earned.forEach(st=>profile.stickers[st.id] = today());
   saveStore();
@@ -2455,9 +2477,12 @@ function finish(){
 
   // Значок і заголовок: медалі 🥇🥈🥉 лишаємо лише для змагань, тут — без них
   const failed = c && !(won && acc >= c.minAcc);
-  document.getElementById('wBig').textContent = landed ? '🎈' : solo ? '🏁' : !won ? '🤖' : failed ? '🎯' : '🏆';
-  document.getElementById('winTitle').textContent = landed ? 'Куля приземлилась' : solo ? 'Фініш!' : !won ? 'Робот пролетів далі' : failed ? 'Етап не зараховано' : 'Перемога!';
-  document.getElementById('wSub').textContent = landed ? 'Друкуй без довгих зупинок — тоді пальник гріє й куля тримається в повітрі.'
+  const tie = duel && typed === botDist;
+  document.getElementById('wBig').textContent = duel ? (won ? '🏆' : tie ? '🤝' : '🎈') : landed ? '🎈' : solo ? '🏁' : !won ? '🤖' : failed ? '🎯' : '🏆';
+  document.getElementById('winTitle').textContent = duel ? (won ? 'Ти пролітаєш більше!' : tie ? 'Порівну!' : `${duel.opp.label} пролітає більше`)
+    : landed ? 'Куля приземлилась' : solo ? 'Фініш!' : !won ? 'Робот пролетів далі' : failed ? 'Етап не зараховано' : 'Перемога!';
+  document.getElementById('wSub').textContent = duel ? `Твоя куля — ${typed} м, ${duel.opp.label} — ${botDist} м${landed ? '. Друкуй без довгих зупинок — тоді куля тримається в повітрі.' : ''}`
+    : landed ? 'Друкуй без довгих зупинок — тоді пальник гріє й куля тримається в повітрі.'
     : solo ? `Твоя куля пролетіла ${typed} м` : `Твоя куля — ${typed} м, робот — ${botDist} м${won ? '' : '. Наступного разу вийде!'}`;
   document.getElementById('wStars').innerHTML = [1,2,3].map(i=>`<span class="${i<=stars?'':'dim'}">⭐</span>`).join('');
   document.getElementById('wSpeed').textContent = speed;
@@ -2482,6 +2507,7 @@ function finish(){
     (earned.length ? `<div class="unlock"><b>🎉 ${earned.length > 1 ? 'Нові наліпки' : 'Нова наліпка'}!</b><div class="stickers">${earned.map(stickerHTML).join('')}</div></div>` : '');
   document.getElementById('wUnlock').querySelectorAll('.sticker').forEach(s=>s.classList.add('new'));
 
+  if(duel){ againAction = ()=>{ toSetup(); openDuel(); }; againLabel = '🧑‍🤝‍🧑 Ще раз разом'; }
   const againBtn = document.getElementById('againBtn');
   againBtn.textContent = againLabel;
   // Друга кнопка: посеред змагання — до його результатів, після вільного польоту — у гараж,
@@ -2494,7 +2520,7 @@ function finish(){
   bindLinkButtons(document.getElementById('wComp'));
 
   setTimeout(()=>{
-    if((won || solo) && !landed && !failed){ if(loud) celebrate(bigWin); else { fanfare(); confetti(); } }
+    if((won || solo) && (!landed || duel) && !failed){ if(loud) celebrate(bigWin); else { fanfare(); confetti(); } }
     else if(loud) sadTrombone(); else tone(330, .3, 'triangle', .07);
     if(loud && (opened.length || proNow || earned.length)) sparkle(1.6);
     overlay.classList.add('show');
@@ -2503,6 +2529,7 @@ function finish(){
 }
 
 function toSetup(){
+  if(race?.duel) window.Duel.leave();
   race = null;
   raceEl.classList.remove('unfocused', 'paused');
   alertEl.hidden = true;
@@ -2540,6 +2567,81 @@ function confetti(n = 70){
 
 
 startBtn.addEventListener('click', ()=>activeTab() === 'paneComp' ? startComp(selComp) : startFree());
+
+/* ================= «Разом»: політ з однокласником (/duel.js каталогу; у коді — duel) ================= */
+// Той, хто кличе, задає регіон, мову й текст; суперник летить з тим самим. Куля робота стає кулею суперника:
+// летить на висоті робота, а відстань — та, яку надрукував суперник. Політ, як завжди, RACE_SEC секунд;
+// перемагає той, хто пролетів більше
+function openDuel(){
+  window.Duel.open({
+    make: ()=>{
+      const level = TRACK_LEVEL[settings.track], t = TRACKS[trackIdx(settings.track)];
+      // Текст на весь політ — однаковий для обох, тож одразу довгий (у базі — до 1000 знаків); хто дійде до кінця, отримає ще, як завжди
+      let text = makeText(settings.lang, level);
+      while(text.length < 900){ const more = makeText(settings.lang, level); if(text.length + 1 + more.length > 1000) break; text += ' ' + more; }
+      return { text, lang:settings.lang, track:settings.track, level, model:settings.model,
+               color:balloonColor(settings.model), badge:settings.badge, desc:`Траса «${t.name}» · ${settings.lang === 'en' ? 'англійська' : 'українська'}` };   // t.emoji тут — малюнок SVG, у запрошення не йде
+    },
+    start: startDuel,
+    solo: startFree,   // немає інтернету — летимо з роботом
+  });
+}
+function startDuel(d){
+  startRace({ track:d.track, lang:d.lang, level:d.level, text:d.text, model:settings.model, cpm:0, duel:d });
+  race.oppH = BOT_H;
+  d.onOpp = o=>{
+    if(!race || race.duel !== d) return;
+    // Відстань приходить уривками (раз на 0,2 с і з затримкою мережі), тож кулю веде loop: вона летить зі швидкістю,
+    // з якою друкує суперник (oppRate, знаків/с), і плавно підтягується до його справжньої відстані (oppPos)
+    if(o.pos > (race.oppPos || 0)){
+      const t = performance.now();
+      if(race.oppAt){ const inst = (o.pos - race.oppPos) / Math.max(0.05, (t - race.oppAt) / 1000); race.oppRate = race.oppRate ? race.oppRate * 0.6 + inst * 0.4 : inst; }
+      race.oppPos = o.pos;
+      race.oppAt = t;
+    }
+    if(o.fin && !race.oppFin){
+      race.oppFin = true;
+      race.oppAt ||= performance.now();
+      // Політ суперника скінчився задовго до кінця часу — його куля приземлилась
+      if(race.phase === 'race' && performance.now() - race.startT < (RACE_SEC - 2) * 1000){ race.oppDown = true; showTip(`${d.opp.label} уже на землі. Лети далі!`); }
+      if(race.phase === 'wait') finish();
+    } else if(o.left && !race.oppLeft){
+      race.oppLeft = true;
+      if(raceLive()) showTip(`${d.opp.label} уже не в заїзді. Лети далі!`);
+      if(race.phase === 'wait') finish();
+    }
+  };
+}
+// Свій політ скінчився (час вийшов чи куля сіла): кажемо суперникові остаточну відстань. Поки він ще летить, результат
+// не показуємо — чекаємо на його fin (тоді onOpp знову кличе finish), але не довше, ніж лишалося польоту, і ще 3 с;
+// не дочекались — порівнюємо з останньою відомою відстанню суперника
+function duelWait(now){
+  if(!race.endT){
+    race.endT = now;
+    window.Duel.pos(race.pos);
+    window.Duel.finish();
+    if(race.oppFin || race.oppLeft) return false;
+    race.phase = 'wait';
+    rafId = requestAnimationFrame(loop);   // куля суперника летить далі
+    balMe.classList.remove('low', 'burn');
+    showNextKey(undefined);
+    clearTimeout(tipTimer);
+    tipEl.textContent = `⏳ ${race.duel.opp.label} ще летить — чекаємо на результат…`;
+    tipEl.hidden = false;
+    const left = Math.max(0, RACE_SEC - (now - race.startT) / 1000);
+    setTimeout(()=>{ if(race && race.endT === now && race.phase === 'wait'){ race.waitOver = true; finish(); } }, (left + 3) * 1000);
+    return true;
+  }
+  return race.phase === 'wait' && !(race.oppFin || race.oppLeft || race.waitOver);
+}
+// Куля суперника: його модель, колір і табличка з ніком; пілот — звичайний (свого пілота суперник не передає)
+function drawOpp(o, myModel){
+  const model = BALLOONS[o.model] ? o.model : 'classic';
+  const mine = balloonColor(myModel);
+  const color = !o.color || o.color === mine ? (mine === BOT_COLOR ? '#16A3A0' : BOT_COLOR) : o.color;
+  balBot.innerHTML = balloonSVG(model, color, 'me', 'kid') + nameTag(o.label, o.badge || '');
+}
+duelBtn.addEventListener('click', openDuel);
 document.getElementById('againBtn').addEventListener('click', ()=>againAction());
 document.getElementById('toSetupBtn').addEventListener('click', ()=>exitAction());
 document.getElementById('exitBtn').addEventListener('click', toSetup);
